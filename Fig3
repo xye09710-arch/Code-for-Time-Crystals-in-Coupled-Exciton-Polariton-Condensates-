@@ -1,0 +1,192 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.integrate import solve_ivp
+import matplotlib.ticker as ticker
+import matplotlib.gridspec as gridspec
+
+# =========================
+# Inequality region
+# =========================
+def ineq_region(alpha, G, B):
+    ineq1 = (B < 3.0 * G)
+    ineq2 = (B * G + 2.0 * G**2 + 1.0 - alpha * (G + B) < 0)
+    return ineq1 & ineq2
+
+
+# =========================
+# kappa_I
+# =========================
+def kappa_I(alpha, gamma):
+    return (1.0 + gamma**2) / (2.0 * (gamma * alpha + 1.0))
+
+
+# =========================
+# S_I two roots
+# =========================
+def SI_roots(alpha, beta, gamma):
+
+    kI = kappa_I(alpha, gamma)
+
+    A = gamma**2 * (1.0 - 8.0 * kI) + (1.0 - 2.0 * kI)**2
+    B = gamma**2 * (1.0 - 4.0 * kI) + (1.0 - 2.0 * kI)**2
+
+    disc = (
+        A**2
+        - 16.0 * kI * gamma**2 * (1.0 + 1.0/beta**2)
+        * (4.0 * kI**2 * gamma**2 - (1.0 - 2.0 * kI)**2 * (1.0 + gamma**2))
+    )
+
+    disc = disc.astype(np.complex128)
+
+    sqrt_disc = np.sqrt(disc)
+
+    eps = 1e-12
+    B_safe = np.where(np.abs(B) < eps, eps, B)
+
+    SI_plus = (A + sqrt_disc) / (2.0 * B_safe)
+    SI_minus = (A - sqrt_disc) / (2.0 * B_safe)
+
+    return SI_plus, SI_minus
+
+
+# =========================
+# P2 P3
+# =========================
+def compute_P2_P3(alpha, beta, gamma, si):
+
+    beta = beta.astype(np.complex128)
+    gamma = gamma.astype(np.complex128)
+
+    kI = kappa_I(alpha, gamma)
+
+    P2 = (-4 * beta**2 + 2 * si * beta**2 - 7 * si**2 * beta**2 + 3 * si**2 * alpha**2 * beta**2
+          + 6 * si * alpha * beta**2 * gamma - 6 * si**2 * alpha * beta**2 * gamma
+          + 12 * beta**2 * gamma**2 - 24 * si * beta**2 * gamma**2 + 12 * si**2 * beta**2 * gamma**2
+          - 24 * si * beta**2 * kI + 24 * si**2 * beta**2 * kI + 12 * si * alpha**2 * beta**2 * kI
+          - 12 * si**2 * alpha**2 * beta**2 * kI)
+
+    P3 = (-16 * beta**3 + 12 * si * beta**3 - 30 * si**2 * beta**3 - 20 * si**3 * beta**3
+          + 18 * si**2 * alpha**2 * beta**3 - 72 * si**3 * alpha**2 * beta**3
+          - 72 * si * alpha * beta**3 * gamma - 72 * si**2 * alpha * beta**3 * gamma
+          + 144 * si**3 * alpha * beta**3 * gamma - 144 * beta**3 * gamma**2
+          + 324 * si * beta**3 * gamma**2 - 216 * si**2 * beta**3 * gamma**2
+          + 36 * si**3 * beta**3 * gamma**2 - 144 * si * beta**3 * kI
+          + 72 * si**2 * beta**3 * kI + 72 * si**3 * beta**3 * kI
+          + 72 * si * alpha**2 * beta**3 * kI - 360 * si**2 * alpha**2 * beta**3 * kI
+          + 288 * si**3 * alpha**2 * beta**3 * kI - 648 * si * alpha * beta**3 * gamma * kI
+          + 1296 * si**2 * alpha * beta**3 * gamma * kI - 648 * si**3 * alpha * beta**3 * gamma * kI)
+
+    return P2, P3
+
+
+# =========================
+# Three eigenvalues
+# =========================
+def eigenvalues(alpha, beta, gamma, si):
+
+    P2, P3 = compute_P2_P3(alpha, beta, gamma, si)
+
+    big_sqrt = np.sqrt((4 * P2**3 + P3**2).astype(np.complex128))
+
+    C = (P3 + big_sqrt)**(1/3)
+
+    eps = 1e-12
+    C = np.where(np.abs(C) < eps, eps, C)
+
+    i = 1j
+
+    lam1 = -(4/3)*(-beta + si*beta) \
+           - (2**(1/3)*P2)/(3*C) \
+           + C/(3*2**(1/3))
+
+    lam2 = -(4/3)*(-beta + si*beta) \
+           + ((1+i*np.sqrt(3))*P2)/(3*2**(2/3)*C) \
+           - ((1-i*np.sqrt(3))*C)/(6*2**(1/3))
+
+    lam3 = -(4/3)*(-beta + si*beta) \
+           + ((1-i*np.sqrt(3))*P2)/(3*2**(2/3)*C) \
+           - ((1+i*np.sqrt(3))*C)/(6*2**(1/3))
+
+    return lam1, lam2, lam3
+
+
+# =========================
+# Stability determination
+# =========================
+def pos_region(lam):
+
+    re = np.real(lam)
+
+    invalid = ~np.isfinite(re) | ~np.isfinite(np.imag(lam))
+
+    re = np.ma.array(re, mask=invalid)
+
+    return (np.round(re,5) > 0)
+
+
+# =========================
+# Main program
+# =========================
+def main():
+
+    alpha = 3.0
+
+    fig = plt.figure(figsize=(12,8))
+
+    g = np.linspace(0,3,500)
+    b = np.linspace(0.2,8,500)
+
+    G,B = np.meshgrid(g,b)
+
+    region_ineq = ineq_region(alpha,G,B)
+
+    Bc = B.astype(np.complex128)
+    Gc = G.astype(np.complex128)
+
+    SI_p,SI_m = SI_roots(alpha,Bc,Gc)
+
+    lam_p = eigenvalues(alpha,Bc,Gc,SI_p)
+    lam_m = eigenvalues(alpha,Bc,Gc,SI_m)
+
+    unstable_plus = (
+        pos_region(lam_p[0]) |
+        pos_region(lam_p[1]) |
+        pos_region(lam_p[2])
+    )
+
+    unstable_minus = (
+        pos_region(lam_m[0]) |
+        pos_region(lam_m[1]) |
+        pos_region(lam_m[2])
+    )
+
+    unstable_both = unstable_plus & unstable_minus
+
+    final_region = region_ineq & unstable_both
+
+    plt.contourf(G,B,final_region.astype(float),
+                 levels=[0.5,1.5],
+                 colors=['limegreen'],
+                 alpha=0.7)
+
+    plt.plot(g,3*g,'k',lw=2)
+
+    F = B*G + 2*G**2 + 1 - alpha*(G+B)
+
+    plt.contour(G,B,F,levels=[0],colors='blue',linewidths=2)
+
+    plt.xlabel(r'$\gamma$',fontsize=20)
+    plt.ylabel(r'$\beta$',fontsize=20)
+
+    plt.text(0.2,7.5,r'$\alpha=3$',fontsize=18)
+
+    plt.xlim(0,3)
+    plt.ylim(0.2,8)
+
+    plt.grid(True,ls='--',alpha=0.5)
+
+    plt.show()
+
+
+if __name__=="__main__":
+    main()
