@@ -1,0 +1,209 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.integrate import odeint
+from matplotlib import gridspec
+from matplotlib.lines import Line2D
+
+def system(y, t, p, eta_R, eta_I, J_R, J_I):
+    R1, R2, phi = y
+    dR1_dt = R1 * (p - eta_I * R1**2) + R2 * (J_I * np.cos(phi) - J_R * np.sin(phi))
+    dR2_dt = R2 * (p - eta_I * R2**2) + R1 * (J_I * np.cos(phi) + J_R * np.sin(phi))
+    dphi_dt = (-eta_R * (R1**2 - R2**2)
+               - J_R * (R2**2 - R1**2) / (R1 * R2) * np.cos(phi)
+               - J_I * (R2**2 + R1**2) / (R1 * R2) * np.sin(phi))
+    return [dR1_dt, dR2_dt, dphi_dt]
+
+# ===== Parameters =====
+t1 = np.linspace(0, 400000, 800000)
+t2 = np.linspace(0, 1000000, 2000000)
+
+y0 = [1e-3, 1e-3, 0.2*np.pi]
+
+p_single = 2*10**(-4)
+N_single = 100**2
+eta_R_single = 3.0 / N_single**2
+eta_I_single = 1.0 / N_single**2
+J_R_single = 1.0*10**(-4)
+J_I_single = 1.0*10**(-4)
+
+param_sets = [
+    {"p": 2.0*10**(-4), "N": 100**2, "J_R": 1.0*10**(-4), "J_I": 0.6*10**(-4)},
+    {"p": 0.5*10**(-4), "N": 100**2, "J_R": 1.0*10**(-4), "J_I": 1.0*10**(-4)}
+]
+
+J_I_c = 1.0*10**(-4)
+J_R_c = 2.0*10**(-4)
+p_c = 4.0*10**(-4)
+eta_I_c = 3.2e-8
+eta_R_c = 3.0e-8
+
+SCALE = 1e4
+
+# ===== Figure layout =====
+fig = plt.figure(figsize=(12, 6))  
+gs = gridspec.GridSpec(
+    2, 2,
+    width_ratios=[1, 1.2],  
+    hspace=0.25,            
+    wspace=0.25,
+    left=0.07,    
+    right=0.98,   
+    bottom=0.12,  
+    top=0.95      
+)
+
+ax1 = fig.add_subplot(gs[0,0])
+ax2 = fig.add_subplot(gs[1,0], sharey=ax1)
+ax3 = fig.add_subplot(gs[:,1])
+
+linewidth = 1.7
+tick_fontsize = 20
+legend_fontsize = 20
+labelsize = 26
+annotation_fontsize = 24
+
+# ===== Top-left plot =====
+sol_top = odeint(system, y0, t1,
+                 args=(p_single,eta_R_single,eta_I_single,J_R_single,J_I_single))
+
+# Divide by scientific notation base to avoid overly long numbers on axes
+ax1.plot(t1/1e6, (sol_top[:,0]**2)/SCALE, color='red', lw=linewidth, label='$N_1$')
+ax1.plot(t1/1e6, (sol_top[:,1]**2)/SCALE, color='blue', lw=linewidth, label='$N_2$')
+
+ax1.set_xlim(0, 0.4)
+ax1.set_ylabel('$N_i$',fontsize=labelsize)  
+ax1.grid(True)
+
+# Y-axis multiplier x10^4 (retained in top-left)
+ax1.text(0.00,1.03,r'$\times10^{4}$',
+         transform=ax1.transAxes,
+         fontsize=tick_fontsize)
+
+# Add (a) label
+ax1.text(-0.08, 0.98, '(a)', transform=ax1.transAxes,
+         fontsize=20, va='top', ha='right')
+ax1.text(1.07, -0.16, r'$\times10^{2}$', transform=ax1.transAxes,
+         fontsize=tick_fontsize, ha='right', va='top')
+
+# ===== Bottom-left plot =====
+linestyles=['-','--']
+
+for i,params in enumerate(param_sets):
+    eta_R=3.0/params["N"]**2
+    eta_I=1.0/params["N"]**2
+
+    sol=odeint(system,y0,t2,
+               args=(params["p"],eta_R,eta_I,params["J_R"],params["J_I"]))
+
+    # X-axis divided by 1e6, Y-axis divided by 1e4 (SCALE)
+    ax2.plot(t2/1e6, (sol[:,0]**2)/SCALE, color='red', ls=linestyles[i], lw=linewidth)
+    ax2.plot(t2/1e6, (sol[:,1]**2)/SCALE, color='blue', ls=linestyles[i], lw=linewidth)
+
+ax2.set_xlim(0, 1.0)
+ax2.set_xlabel(r'$(\kappa_0 t ) /\hbar$',fontsize=labelsize)
+ax2.set_ylabel('$N_i$',fontsize=labelsize)  
+ax2.grid(True)
+ax2.text(0.00,1.03,r'$\times10^{4}$',
+         transform=ax2.transAxes,
+         fontsize=tick_fontsize)
+# X-axis multiplier at bottom of left plot x10^6
+ax2.text(1.07, -0.16, r'$\times10^{2}$', transform=ax2.transAxes,
+         fontsize=tick_fontsize, ha='right', va='top')
+
+# Add (b) label
+ax2.text(-0.08, 0.98, '(b)', transform=ax2.transAxes,
+         fontsize=20, va='top', ha='right')
+
+# ===== Right plot =====
+r1_sq=np.linspace(0,20000,500)
+r2_sq=np.linspace(0,20000,500)
+
+R1_sq,R2_sq=np.meshgrid(r1_sq,r2_sq)
+
+lhs1=(J_I_c**2*(p_c*(R2_sq-R1_sq)+eta_I_c*(R1_sq**2-R2_sq**2))**2
+      +J_R_c**2*(p_c*(R2_sq+R1_sq)-eta_I_c*(R1_sq**2+R2_sq**2))**2)
+
+rhs1=4*J_I_c**2*J_R_c**2*R1_sq*R2_sq
+eq1=lhs1-rhs1
+
+term1=J_R_c**2*(-p_c*(R2_sq+R1_sq)+eta_I_c*(R1_sq**2+R2_sq**2))
+term2=J_I_c**2*(-p_c*(R2_sq+R1_sq)+eta_I_c*(R1_sq+R2_sq)**2)
+
+lhs2=(term1+term2)*(R1_sq-R2_sq)
+rhs2=2*eta_R_c*J_I_c*J_R_c*R1_sq*R2_sq*(R1_sq-R2_sq)
+
+eq2=lhs2-rhs2
+
+ax3.contour(R1_sq/SCALE,R2_sq/SCALE,eq1,levels=[0],colors='red',linewidths=1.5)
+ax3.contour(R1_sq/SCALE,R2_sq/SCALE,eq2,levels=[0],colors='blue',linewidths=1.5)
+
+ax3.set_xlim(0,1.8)
+ax3.set_ylim(0,1.8)
+
+ax3.set_xlabel('$N_1$',fontsize=labelsize)
+ax3.set_ylabel('$N_2$',fontsize=labelsize)
+
+ax3.grid(True)
+ax3.set_aspect('equal')
+
+points_info = [
+    (0.007, 1.25, '$N_{i2}^0$', 'left', 'center', 0.04, 0),        
+    (0.39, 1.59, '$N_{i4}^{AS}$', 'left', 'top', 0.03, -0.03),     
+    (1.0, 1.743, '$N_{i3}^{AS}$', 'center', 'top', 0, -0.05),      
+    (1.563, 1.563, '$N_{i+}^{S}$', 'center', 'top', -0.05, -0.13),     
+    (1.741, 1.000, '$N_{i2}^{AS}$', 'right', 'center', -0.05, 0),  
+    (1.6, 0.389, '$N_{i1}^{AS}$', 'right', 'center', -0.05, 0),    
+    (1.25, 0.0, '$N_{i1}^0$', 'center', 'bottom', 0, 0.05),     
+    (0.0, 0.0, '$N_i^T$', 'left', 'center', 0.07, 0.05),
+    (0.936, 0.936, '$N_{i-}^S$', 'left', 'center', 0.05, 0.00)            
+]
+
+for x, y, label, ha, va, dx, dy in points_info:
+    ax3.plot(x, y, 'ko', markersize=7)  
+    ax3.text(x + dx, y + dy, label, fontsize=annotation_fontsize, ha=ha, va=va)
+
+ax3.text(0.88,-0.12,r'$\times10^{4}$',
+         transform=ax3.transAxes,
+         fontsize=tick_fontsize)
+
+ax3.text(0.00,1.01,r'$\times10^{4}$',
+         transform=ax3.transAxes,
+         fontsize=tick_fontsize)
+
+ax3.text(-0.13, 0.99, '(c)', transform=ax3.transAxes,
+         fontsize=20, va='top', ha='right')
+
+legend_handles=[
+    Line2D([0],[0],color='red',lw=2,label='Eq. (4a)'),
+    Line2D([0],[0],color='blue',lw=2,label='Eq. (4b)')
+]
+
+ax3.legend(handles=legend_handles,
+           loc='center left',
+           bbox_to_anchor=(0.02,0.5),
+           fontsize=legend_fontsize)
+
+# ===== Unified axes styling =====
+for ax in (ax1,ax2,ax3):
+    ax.tick_params(axis='both',labelsize=tick_fontsize,width=1.5,length=6)
+    for spine in ax.spines.values():
+        spine.set_linewidth(1.5)
+
+ax1.legend(fontsize=legend_fontsize)
+
+# [Modified here]: Removed original ax2.legend(...) and related definitions
+# Added plain text explanation in suitable position in bottom-left plot without frame and extra whitespace
+# The 0.05, 0.15 here are relative positions based on figure proportion, adjust as needed
+ax1.legend(
+    loc='upper center',       
+    bbox_to_anchor=(0.55, 1.04),
+    ncol=2,                   
+    fontsize=legend_fontsize, 
+    framealpha=0.8,           
+    handlelength=1.5          
+)
+ax2.text(0.72, 0.67, 'Red: $N_1$\nBlue: $N_2$', 
+         transform=ax2.transAxes, 
+         fontsize=legend_fontsize, 
+         va='bottom', ha='left')
+plt.show()
